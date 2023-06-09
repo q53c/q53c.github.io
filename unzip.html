@@ -1,0 +1,202 @@
+<html>
+<head>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jstree/3.2.1/themes/default/style.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.12.1/jquery.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jstree/3.2.1/jstree.min.js"></script>
+</head>
+<body>
+
+<label for="file-input">Choose a file</label>
+<input id="file-input" type="file"></input>
+<pre id="hexdump"> </pre>
+<div id="tree"></div>
+<div id="using_json_2"></div>
+<script>
+var input = document.getElementById ("file-input"); // get the input element
+var hexdump = document.getElementById ("hexdump"); // get the input element
+function hexDump(bs){
+     let hex = "";
+    for (let i = 0; i < bs.length; i++) {
+      // Get ASCII code of each character
+      let code = bs.charCodeAt(i);
+      // Convert to hexadecimal and pad with zeros
+      hex += code.toString(16).padStart(2, "0");
+    }
+
+    // Print hexadecimal in formatted way
+    let output = "";
+    for (let i = 0; i < hex.length; i += 32) {
+      // Get address of each line
+      let address = (i / 2).toString(16).padStart(8, "0");
+      // Get hexadecimal bytes of each line
+      let bytes = hex.slice(i, i + 32);
+      // Add spaces between every two bytes
+      bytes = bytes.replace(/(..)/g, "$1 ");
+      // Get ASCII characters of each line
+      let chars = "";
+      for (let j = i / 2; j < (i + 32) / 2; j++) {
+        // Get ASCII code of each byte
+        let code = parseInt(hex.slice(j * 2, j * 2 + 2), 16);
+        // Check if printable character or dot
+        chars += code >= 32 && code <= 126 ? String.fromCharCode(code) : ".";
+      }
+      // Add address, bytes and chars to output
+      output += `${address} ${bytes} ${chars}\n`;
+    }
+    return output;
+}
+
+function readFileAsync (file, offset, length) {
+    return new Promise ((resolve, reject) => {
+        let reader = new FileReader (); // create a FileReader object
+        reader.onload = () => { // set the onload handler
+            resolve (reader.result); // resolve with the result
+        };
+        var size = file.size; // get the total number of bytes in the file
+        var blob 
+        if (offset < 0){
+            blob = file.slice (size + offset, size + offset + length); // create a blob that contains only the last 16 bytes
+        } else {
+            blob = file.slice (offset, offset + length); // create a blob that contains only the last 16 bytes
+        }
+        reader.onerror = reject; // reject on error
+        reader.readAsBinaryString(blob)
+    });
+}
+
+function handleFileSelect () {
+    var input = document.getElementById ("file-input"); // get the input element
+    var fileName = input.value; // get the name of the selected file
+    var fileList = input.files; // get a FileList object
+    var file = fileList[0]; // get the first File object
+    console.log (fileName); // do something with it
+    console.log (file); // do something with it
+    
+    
+    var reader = new FileReader (); // create a FileReader object
+    var size = file.size; // get the total number of bytes in the file
+    var blob = file.slice (size - 16, size); // create a blob that contains only the last 16 bytes
+    reader.readAsBinaryString (blob); // read the blob as a binary string
+    reader.addEventListener ("loadend", async function () {
+        var result = reader.result; // get the result as a binary string
+        console.log ("loadend", result); // do something with it
+    });
+}
+
+function str2ab(str) {
+  var buf = new ArrayBuffer(str.length); // 1 byte for each char
+  var bufView = new Uint8Array(buf);
+  for (var i=0, strLen=str.length; i < strLen; i++) {
+    bufView[i] = str.charCodeAt(i);
+  }
+  return buf;
+}
+
+var nodeid = 0
+var tree = {
+    id: "#", 
+    children: {}
+}
+
+function tree_append(file_name){
+    var comps = file_name.split('/')
+    var cur = tree
+    for (i in comps){
+        var tmp = cur.children[comps[i]]
+        if (!tmp){
+            tmp = {
+                id: nodeid++,
+                children: {}
+            }
+            cur.children[comps[i]] = tmp
+        }
+        cur = tmp
+    }
+}
+
+function render_tree(current, nodes){
+    for (k in current.children){
+        nodes.push({ "id" : "" + current.children[k].id, "parent" : "" + current.id, "text" : k })
+        render_tree(current.children[k], nodes)
+    }
+}
+async function handleFileSelect2(){
+    nodeid = 0
+    tree = {
+        id: "#", 
+        children: {}
+    }
+    var input = document.getElementById ("file-input"); // get the input element
+    var fileName = input.value; // get the name of the selected file
+    var fileList = input.files; // get a FileList object
+    var file = fileList[0]; // get the first File object
+    let zip_tailer = await readFileAsync(file, -22, 22);
+    // console.log (hexdump(zip_tailer)); // do something with it
+    // let content2 = await readFileAsync(file, 0, 16);
+    // console.log (hexdump(content2)); // do something with it
+    // hexdump.textContent = hexDump(zip_tailer)
+    let ab = str2ab(zip_tailer)
+    let dataView = new DataView(ab)
+    console.log("len:", dataView.getUint32(12, true))
+    console.log("ofs:", dataView.getUint32(16, true))
+    console.log("----", dataView.getUint32(4, true))
+    
+    let central_dir = await readFileAsync(file, dataView.getUint32(16, true), dataView.getUint32(12, true))
+    
+    // console.log (hexDump(central_dir));
+    let cd_ab = str2ab(central_dir);
+    let cd_dv = new DataView(cd_ab)
+    var pos = 0
+    console.log(pos, cd_dv.byteLength)
+    while(pos < cd_dv.byteLength){
+        let section_type = cd_dv.getUint16(pos + 2, true)
+        // console.log(`section_type: ${section_type}`)
+        switch (section_type){
+            case 0x201:{
+                    var len_file_name = cd_dv.getUint16(pos + 28, true)
+                    var len_extra = cd_dv.getUint16(pos + 30, true)
+                    var len_comment = cd_dv.getUint16(pos + 32, true)
+                    var ofs_file_name = pos + 46
+                    var file_name = central_dir.slice(ofs_file_name, ofs_file_name + len_file_name)
+                    // console.log(`central_dir_entry len_file_name=${len_file_name} len_comment=${len_comment} file_name=${file_name}`);
+                    pos = pos + 46 + len_file_name + len_extra + len_comment
+                    tree_append(file_name)
+                }
+                break;
+            case 0x403:
+                console.log("0x403");
+                pos = cd_dv.byteLength
+                break;
+            case 0x605:
+                console.log("0x605");
+                pos = cd_dv.byteLength
+                break;
+            case 0x807:
+                console.log("0x807");
+                pos = cd_dv.byteLength
+                break;
+        }
+    }
+    // console.log(tree)
+    var data = []
+    render_tree(tree, data)
+    // console.log(data)
+    $('#using_json_2').jstree({ 'core' : {
+        'data' : data
+    } });
+}
+input.addEventListener('change', handleFileSelect2);
+</script>
+<script>
+/*
+    $('#using_json_2').jstree({ 'core' : {
+        'data' : [
+           { "id" : "ajson1", "parent" : "#", "text" : "Simple root node" },
+           { "id" : "ajson2", "parent" : "#", "text" : "Root node 2" },
+           { "id" : "ajson3", "parent" : "ajson2", "text" : "Child 1" },
+           { "id" : "ajson4", "parent" : "ajson2", "text" : "Child 2" },
+        ]
+    } });
+    */
+</script>
+</body></html>
