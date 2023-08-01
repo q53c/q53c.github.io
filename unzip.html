@@ -1,5 +1,6 @@
 <html>
 <head>
+  <meta charset="UTF-8"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jstree/3.2.1/themes/default/style.min.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.12.1/jquery.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jstree/3.2.1/jstree.min.js"></script>
@@ -115,9 +116,15 @@ function tree_append(file_name){
 }
 
 function render_tree(current, nodes){
+    var cnt = 0
     for (k in current.children){
-        nodes.push({ "id" : "" + current.children[k].id, "parent" : "" + current.id, "text" : k })
+        nodes.push({ "id" : "" + current.children[k].id, "parent" : "" + current.id, "text" : k, "icon": "./d.png"})
         render_tree(current.children[k], nodes)
+        cnt += 1
+    }
+    if (cnt == 0 && nodes.length > 0){
+        let parent = nodes[nodes.length - 1];
+        parent['icon'] = "./f.png"
     }
 }
 async function handleFileSelect2(){
